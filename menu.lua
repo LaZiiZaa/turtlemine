@@ -150,12 +150,17 @@ end
 -------------------------------------------------------------
 local running = true
 local items = {
-  { "Mettre a jour (garde les donnees)", actUpdate },
-  { "Reinstallation propre",             actReinstall },
   { "Lancer ("..RUNCMD..")",             actRun },
-  { "Tout supprimer",                    actDelete },
-  { "Redemarrer",                        function() os.reboot() end },
-  { "Quitter",                           function() running = false end },
+  {},
+  { "MAJ (garde les donnees)", actUpdate },
+  {},
+  { "Reinstall",             actReinstall },
+  {},
+  { "Delete All-MAJ",                    actDelete },
+  {},
+  { "Reboot",                        function() os.reboot() end },
+  {},
+  { "Quit",                           function() running = false end },
 }
 
 local sel = 1
@@ -163,27 +168,46 @@ local function draw()
   local W, H = term.getSize()
   pB("black"); pT("white"); term.clear()
   pB(COLOR and "blue" or "black"); pT("white")
-  term.setCursorPos(1,1); term.write((" Gestion minage - "..DEVICE..string.rep(" ", W)):sub(1, W))
+  term.setCursorPos(1,1); term.write((" Gestion - "..DEVICE..string.rep(" ", W)):sub(1, W))
   pB("black")
+  local num = 0
   for i, it in ipairs(items) do
-    local y = 2 + i
-    term.setCursorPos(1, y)
-    if i == sel then
-      pB(COLOR and "gray" or "black"); pT(COLOR and "yellow" or "white")
-      term.write(((" > "..i..". "..it[1])..string.rep(" ", W)):sub(1, W))
-      pB("black")
-    else
-      pT("white"); term.write(("   "..i..". "..it[1]):sub(1, W))
+    term.setCursorPos(1, 2 + i)
+    if it[1] then                            -- vraie entree (sinon : ligne vide = separateur)
+      num = num + 1
+      local line = num..". "..it[1]
+      if i == sel then
+        pB(COLOR and "gray" or "black"); pT(COLOR and "yellow" or "white")
+        term.write((" > "..line..string.rep(" ", W)):sub(1, W)); pB("black")
+      else
+        pT("white"); term.write(("   "..line):sub(1, W))
+      end
     end
   end
   reset(); pT("lightGray"); term.setCursorPos(1, H)
   term.write(("fleches+Entree | chiffre | clic"):sub(1, W))
 end
 
-local function activate(i)
-  sel = i
-  items[i][2]()
+-- index des vraies entrees (on saute les separateurs {})
+local function reals()
+  local t = {}
+  for i, it in ipairs(items) do if it[1] then t[#t+1] = i end end
+  return t
 end
+local function nextReal(from, dir)
+  local i = from
+  for _ = 1, #items do
+    i = (i - 1 + dir) % #items + 1
+    if items[i] and items[i][1] then return i end
+  end
+  return from
+end
+local function activate(i)
+  if items[i] and items[i][2] then sel = i; items[i][2]() end
+end
+
+-- sel demarre sur la 1re vraie entree (jamais sur un separateur)
+if not (items[sel] and items[sel][1]) then sel = nextReal(sel, 1) end
 
 while running do
   draw()
@@ -191,16 +215,16 @@ while running do
   local e = ev[1]
   if e == "key" then
     local k = ev[2]
-    if     k == keys.up    then sel = (sel - 2) % #items + 1
-    elseif k == keys.down  then sel =  sel      % #items + 1
+    if     k == keys.up    then sel = nextReal(sel, -1)
+    elseif k == keys.down  then sel = nextReal(sel,  1)
     elseif k == keys.enter then activate(sel) end
   elseif e == "char" then
     local n = tonumber(ev[2])
-    if n and items[n] then activate(n)
+    if n then local r = reals(); if r[n] then activate(r[n]) end
     elseif ev[2]:lower() == "q" then running = false end
   elseif e == "mouse_click" or e == "monitor_touch" then
     local i = ev[4] - 2                      -- ligne -> index (titre = ligne 1)
-    if items[i] then activate(i) end
+    if items[i] and items[i][1] then activate(i) end
   end
 end
 
