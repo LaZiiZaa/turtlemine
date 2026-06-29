@@ -14,7 +14,7 @@
 
   --- Option A : GitHub (le plus simple : une seule URL) ---
    1. Mets minenet.lua, mine.lua, remote.lua, startup.lua et
-      startup_remote.lua dans un depot GitHub.
+      menu.lua dans un depot GitHub.
    2. Renseigne GITHUB_BASE ci-dessous = l'URL "raw" du dossier,
       terminee par "/". Exemple :
         https://raw.githubusercontent.com/TONPSEUDO/turtlemine/main/
@@ -36,11 +36,11 @@
 local GITHUB_BASE = "https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/"
 
 local PASTE = {
-  ["minenet.lua"]        = "",   -- code pastebin de minenet.lua
-  ["mine.lua"]           = "",   -- code pastebin de mine.lua
-  ["remote.lua"]         = "",   -- code pastebin de remote.lua
-  ["startup.lua"]        = "",   -- code pastebin du startup TORTUE
-  ["startup_remote.lua"] = "",   -- code pastebin du startup TABLETTE
+  ["minenet.lua"] = "",   -- code pastebin de minenet.lua
+  ["mine.lua"]    = "",   -- code pastebin de mine.lua
+  ["remote.lua"]  = "",   -- code pastebin de remote.lua
+  ["startup.lua"] = "",   -- code pastebin du startup commun
+  ["menu.lua"]    = "",   -- code pastebin du gestionnaire
 }
 
 -------------------------------------------------------------
@@ -106,13 +106,15 @@ if isTurtle then
   plan = {
     { "minenet.lua", "minenet.lua", "module reseau" },
     { "mine.lua",    "mine.lua",    "programme de minage" },
-    { "startup.lua", "startup.lua", "demarrage auto (reprise)" },
+    { "startup.lua", "startup.lua", "demarrage commun (reprise/menu)" },
+    { "menu.lua",    "menu.lua",    "gestionnaire (maj/suppr)" },
   }
 else
   plan = {
     { "minenet.lua",        "minenet.lua", "module reseau" },
     { "remote.lua",         "remote.lua",  "tablette de controle" },
-    { "startup_remote.lua", "startup.lua", "demarrage auto (remote)" },
+    { "startup.lua",        "startup.lua", "demarrage commun (menu)" },
+    { "menu.lua",           "menu.lua",    "gestionnaire (maj/suppr)" },
   }
 end
 

@@ -1,23 +1,29 @@
 --[[============================================================
-  startup.lua  —  Demarrage automatique de la tortue de minage
+  startup.lua  —  Demarrage COMMUN (tortue / tablette / ordinateur)
   ------------------------------------------------------------
-  S'execute tout seul a chaque allumage / redemarrage de la tortue.
+  Meme fichier sur tous les appareils :
 
-  - Si une tache de minage est en cours (fichier .mine_state),
-    elle est REPRISE automatiquement, sans rien demander.
-    (utile apres un redemarrage serveur, un rechargement de chunk,
-     ou la commande "restart" envoyee depuis la tablette remote.lua)
+  - Tortue avec une tache de minage en cours (.mine_state) :
+    REPRISE automatique du minage (apres reboot serveur, rechargement
+    de chunk, ou commande "restart" depuis la tablette). La tortue
+    ne s'arrete pas pour rien demander.
 
-  - Sinon, la tortue laisse la main : tape "mine" pour ouvrir le menu.
+  - Sinon : ouvre le MENU de gestion (menu.lua) d'ou l'on peut
+    lancer le programme, mettre a jour, reinstaller, supprimer...
 
-  Pose ce fichier a la racine de la tortue, a cote de mine.lua.
+  Installe par install_tortue / install_tablette / install_ordinateur.
 ============================================================]]--
 
-if fs.exists(".mine_state") then
+if turtle and fs.exists(".mine_state") then
   print("Tache de minage detectee : reprise automatique...")
   sleep(1)                       -- laisse le monde / les peripheriques se stabiliser
   shell.run("mine", "resume")    -- reprend sans poser de question
+
+elseif fs.exists("menu.lua") or fs.exists("menu") then
+  shell.run("menu")
+
 else
-  print("Tortue de minage prete.")
-  print("Tape 'mine' pour demarrer (ou 'mine tunnel 50').")
+  print("menu.lua introuvable.")
+  print("Relance l'installateur :")
+  print("  install_tortue / install_tablette / install_ordinateur")
 end

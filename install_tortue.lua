@@ -12,7 +12,7 @@ local BASE  = "https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/"
 local FILES = {
   { "minenet.lua", "minenet.lua", "module reseau" },
   { "mine.lua",    "mine.lua",    "programme de minage" },
-  { "startup.lua", "startup.lua", "demarrage auto (reprise)" },
+  { "startup.lua", "startup.lua", "demarrage commun (reprise/menu)" },
   { "menu.lua",    "menu.lua",    "gestionnaire (maj/suppr)" },
 }
 

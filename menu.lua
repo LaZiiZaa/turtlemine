@@ -25,7 +25,7 @@ local SET = isTurtle and {
 } or {
   { src="minenet.lua",        dst="minenet.lua" },
   { src="remote.lua",         dst="remote.lua" },
-  { src="startup_remote.lua", dst="startup.lua" },
+  { src="startup.lua",        dst="startup.lua" },
 }
 local DEVICE = isTurtle and "TORTUE" or "TABLETTE / ORDI"
 local RUNCMD = isTurtle and "mine" or "remote"

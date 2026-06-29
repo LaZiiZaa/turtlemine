@@ -10,8 +10,7 @@ contrôle à distance, pour [CC: Tweaked](https://tweaked.cc/) (Minecraft).
 | `mine.lua` | Tortue | Programme de minage : modes tunnel/excavatrice, filtrage des minerais, dépôt auto (coffre Ender ou coffre de base), gestion du carburant, reprise après coupure. |
 | `remote.lua` | Tablette | Pocket Computer / ordinateur de contrôle : suit toutes les tortues en temps réel, vue détail, commandes (pause / reprise / retour base / arrêt / restart / inventaire). Affichage **responsive**, diffusion sur un **moniteur** si présent. |
 | `minenet.lua` | Les deux | Module réseau partagé (protocole rednet commun). |
-| `startup.lua` | Tortue | Démarrage auto : reprend la tâche en cours après un reboot. |
-| `startup_remote.lua` | Tablette/Ordi | Démarrage auto : détecte le modem et lance `remote`. |
+| `startup.lua` | Tous | Démarrage commun : reprend le minage (tortue avec tâche en cours), sinon ouvre `menu`. |
 | `install_tortue.lua` | Tortue | Installe `minenet` + `mine` + `startup` (reprise). |
 | `install_tablette.lua` | Pocket | Installe `minenet` + `remote` + `startup`. |
 | `install_ordinateur.lua` | Ordinateur | Installe `minenet` + `remote` + `startup` (affichage sur moniteur si présent). |

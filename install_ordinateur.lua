@@ -14,7 +14,7 @@ local BASE  = "https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/"
 local FILES = {
   { "minenet.lua",        "minenet.lua", "module reseau" },
   { "remote.lua",         "remote.lua",  "poste de controle" },
-  { "startup_remote.lua", "startup.lua", "demarrage auto (remote)" },
+  { "startup.lua",        "startup.lua", "demarrage commun (menu)" },
   { "menu.lua",           "menu.lua",    "gestionnaire (maj/suppr)" },
 }
 
