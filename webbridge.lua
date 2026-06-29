@@ -67,7 +67,11 @@ while true do
       url     = SERVER,
       method  = "POST",
       body    = textutils.serializeJSON({ turtles = arr, count = #arr }),
-      headers = { ["Content-Type"] = "application/json" },
+      headers = {
+        ["Content-Type"] = "application/json",
+        -- evite la page d'avertissement de ngrok (sans effet sur un serveur normal)
+        ["ngrok-skip-browser-warning"] = "1",
+      },
     }
     local _, y = term.getCursorPos()
     term.setCursorPos(1, y)
