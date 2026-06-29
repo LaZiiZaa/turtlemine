@@ -75,11 +75,12 @@ local function fmtTime(s)
   if m>=60 then return ("%dh%02dm"):format(math.floor(m/60), m%60) end
   return ("%dm%02ds"):format(m, s%60)
 end
-local function drawBar(frac, width, x, y)
+local function drawBar(frac, width, x, y, fillCol)
   term.setCursorPos(x, y)
-  local filled = math.floor((frac or 0)*width + 0.5)
+  frac = math.max(0, math.min(1, frac or 0))
+  local filled = math.floor(frac*width + 0.5)
   if COLOR and colors then
-    pB("green"); term.write(string.rep(" ", filled))
+    pB(fillCol or "green"); term.write(string.rep(" ", filled))
     pB("gray");  term.write(string.rep(" ", width-filled)); pB("black")
   else
     term.write("["..string.rep("=", filled)..string.rep(" ", width-filled).."]")
@@ -94,6 +95,7 @@ local selected = nil          -- id affiche en detail (nil = vue liste)
 local feedback = ""           -- message transitoire (commande envoyee...)
 local invCache = {}           -- id -> table inventaire recue (type="inv")
 local invShown = false        -- true = on affiche l'inventaire de 'selected'
+local helpShown = false       -- true = on affiche l'aide (liste des commandes)
 local scroll    = 0           -- defilement de la vue courante (liste / recolte)
 local maxScroll = 0           -- borne max de defilement (recalculee a chaque affichage)
 
@@ -130,9 +132,9 @@ local CMDS = {
   { "R:Repr",    "resume",  "green"  },
   { "B:Base",    "return",  "cyan"   },
   { "S:Stop",    "stop",    "red"      },
-  { "X:Stats",   "stats",   "gray"     },
   { "I:Inv",     "inv",     "lightBlue"},
   { "Z:Restart", "restart", "purple"   },
+  { "A:Aide",    "help",    "gray"     },
   { "Q:Retour",  "back",    "blue"     },
 }
 
@@ -232,36 +234,70 @@ local function drawList()
   drawFooter("chiffre/clic=detail  Q=quitter", #list, rowsVis)
 end
 
+-- petit libelle gris + valeur coloree, a la position (1,y)
+local function kvLine(y, label, value, valCol)
+  term.setCursorPos(1, y)
+  pT("lightGray"); term.write(label)
+  pT(valCol or "white"); term.write(tostring(value))
+end
+
 local function drawDetail(id)
   btns = {}
   maxScroll = 0                     -- la vue detail tient sur un ecran (pas de defilement)
   local rec = turtles[id]
   if not rec then selected=nil; return drawList() end
   local st = rec.st
+  local on = online(rec)
+  local barW = math.min(W-2, 30)    -- largeur des barres (responsive)
   clear()
+
+  -- Titre
   pB(COLOR and "blue" or "black"); pT("white")
-  term.setCursorPos(1,1); term.write(((" "..(st.label or ("#"..id)))..string.rep(" ", W)):sub(1, W))
+  term.setCursorPos(1,1)
+  term.write(((" MINEUSE  "..(st.label or ("#"..id))..(on and "" or "  [HORS LIGNE]"))
+             ..string.rep(" ", W)):sub(1, W))
   pB("black")
-  pT(online(rec) and (STATE_COL[st.state] or "white") or "gray")
-  term.setCursorPos(1,2); term.write("Etat : "..(st.state or "?")..(online(rec) and "" or " [HORS LIGNE]"))
-  pT("white")
-  term.setCursorPos(1,3); term.write("Avanc: "..(st.pct and (st.pct.."%") or "(profondeur)"))
-  drawBar(st.pct and st.pct/100 or 0, math.min(W-2, 22), 1, 4)
-  term.setCursorPos(1,5); term.write(("Pos  : %d,%d,%d  %s"):format(st.x or 0, st.y or 0, st.z or 0, dirName(st.dir)))
-  local fp = st.fuelPct and (" ("..st.fuelPct.."%)") or ""
-  term.setCursorPos(1,6); term.write("Fuel : "..tostring(st.fuel)..fp)
-  term.setCursorPos(1,7); term.write("Inv  : "..(st.invPct or 0).."%   Blocs: "..(st.blocks or 0))
-  term.setCursorPos(1,8); term.write("Miner: "..(st.ores or 0).."   Reste: "..tostring(st.distRemaining or "?"))
-  term.setCursorPos(1,9); term.write("Temps: "..fmtTime(st.elapsed).."  ETA "..fmtTime(st.eta))
+
+  -- Etat
+  kvLine(2, "Etat : ", st.state or "?", on and (STATE_COL[st.state] or "white") or "gray")
+
+  -- Progression + barre
+  local pf = st.pct and st.pct/100 or nil
+  kvLine(3, "Progression  ", st.pct and (st.pct.."%") or "(profondeur)", "white")
+  drawBar(pf or 0, barW, 1, 4, "lime")
+
+  -- Fuel + barre (coloree selon le niveau)
+  local fpct = st.fuelPct
+  local fcol = (fpct and fpct<15) and "red"
+            or (fpct and fpct<40) and "yellow" or "lime"
+  kvLine(5, "Fuel  ", tostring(st.fuel)..(fpct and ("  "..fpct.."%") or "  (illimite)"), fcol)
+  drawBar(fpct and fpct/100 or 1, barW, 1, 6, fpct and fcol or "lime")
+
+  -- Inventaire + reste de blocs a casser
+  term.setCursorPos(1,7)
+  pT("lightGray"); term.write("Inv ")
+  pT("white");     term.write((st.invPct or 0).."%")
+  pT("lightGray"); term.write("    Reste ")
+  pT("white");     term.write(tostring(st.distRemaining or "?").." blocs")
+
+  -- Temps + ETA
+  term.setCursorPos(1,8)
+  pT("lightGray"); term.write("Temps ")
+  pT("white");     term.write(fmtTime(st.elapsed))
+  pT("lightGray"); term.write("  ETA ")
+  pT("cyan");      term.write(fmtTime(st.eta))
+
+  -- Message de statut + retour de commande
   if st.statusMsg and st.statusMsg~="" then
-    pT("orange"); term.setCursorPos(1,10); term.write(tostring(st.statusMsg):sub(1, W)); pT("white")
+    pT("orange"); term.setCursorPos(1,9); term.write(tostring(st.statusMsg):sub(1, W))
   end
-  if feedback~="" then pT("yellow"); term.setCursorPos(1,11); term.write(feedback:sub(1,W)); pT("white") end
-  -- Boutons de commande : grille cliquable / tactile qui s'adapte a la largeur.
-  -- Chaque bouton a sa propre zone de clic (pas de chevauchement) et son
-  -- raccourci clavier (la 1re lettre du label).
+  if feedback~="" then pT("yellow"); term.setCursorPos(1,10); term.write(feedback:sub(1,W)) end
+  pT("white")
+
+  -- Boutons : grille cliquable / tactile qui s'adapte a la largeur, chaque
+  -- bouton a sa zone de clic et son raccourci clavier (1re lettre du label).
   local rows = layoutRows(CMDS)
-  local startY = math.max(2, H - #rows)        -- ancre en bas de l'ecran
+  local startY = math.max(11, H - #rows)       -- ancre en bas, sous les infos
   for i, row in ipairs(rows) do
     local y, x = startY + (i-1), 1
     for _, d in ipairs(row) do x = button(x, y, d[1], d[2], d[3]) end
@@ -330,8 +366,44 @@ local function drawInventory(id)
   term.write((" R=actu Q=ret"):sub(1, math.max(0, W - x + 1)))
 end
 
+-- Aide : liste de toutes les commandes (touche -> action)
+local HELP = {
+  { "P", "Pause le minage" },
+  { "R", "Reprendre le minage" },
+  { "B", "Retour a la base" },
+  { "S", "Stop (arret, reprise possible)" },
+  { "I", "Inventaire / recolte" },
+  { "Z", "Restart (redemarre la tortue)" },
+  { "A", "Aide (cet ecran)" },
+  { "Q", "Retour" },
+  { "fleches", "Defiler une liste" },
+  { "molette", "Defiler (souris)" },
+  { "chiffre", "Choisir une tortue (liste)" },
+  { "clic/tap", "Activer un bouton" },
+}
+local function drawHelp()
+  btns = {}
+  clear()
+  pB(COLOR and "blue" or "black"); pT("white")
+  term.setCursorPos(1,1); term.write((" Aide - commandes"..string.rep(" ", W)):sub(1, W))
+  pB("black"); pT("white")
+  local entries = {}
+  for _, h in ipairs(HELP) do
+    entries[#entries+1] = { text = ("[%s] %s"):format(h[1], h[2]), col = "white" }
+  end
+  scroll = drawColumns(entries, 3, H-1, scroll)
+  local x = button(1, H, "Ret", "helpback", "blue")
+  if maxScroll > 0 then
+    x = button(x, H, "^", "scrollup", "gray")
+    x = button(x, H, "v", "scrolldn", "gray")
+  end
+  pT("lightGray"); term.setCursorPos(x, H)
+  term.write((" Q=retour"):sub(1, math.max(0, W - x + 1)))
+end
+
 local function redraw()
-  if selected and invShown then drawInventory(selected)
+  if helpShown and selected then drawHelp()
+  elseif selected and invShown then drawInventory(selected)
   elseif selected then drawDetail(selected)
   else drawList() end
 end
@@ -372,11 +444,16 @@ while true do
   elseif e=="char" then
     local c = ev[2]:lower()
     if c=="q" then
-      if invShown then invShown=false; scroll=0; feedback=""; redraw()      -- recolte -> detail
-      elseif selected then selected=nil; invShown=false; scroll=0; feedback=""; redraw()
+      if helpShown then helpShown=false; scroll=0; redraw()                 -- aide -> detail
+      elseif invShown then invShown=false; scroll=0; feedback=""; redraw()  -- recolte -> detail
+      elseif selected then selected=nil; invShown=false; helpShown=false; scroll=0; feedback=""; redraw()
       else restoreTerm(); clear(); print("Au revoir."); return end
+    elseif helpShown then
+      -- vue aide : seules Q (ci-dessus) et les fleches (key) comptent
     elseif invShown then
       if c=="r" or c=="i" then send("inv"); redraw() end                    -- R = actualiser
+    elseif c=="a" and selected then
+      helpShown=true; scroll=0; redraw()                                    -- ouvre l'aide
     elseif c=="i" and selected then
       invShown=true; scroll=0; send("inv"); redraw()                        -- ouvre la recolte
     elseif selected then
@@ -393,7 +470,8 @@ while true do
     elseif k==keys.pageUp   then scroll = math.max(0, scroll-5);          redraw()
     elseif k==keys.pageDown then scroll = math.min(maxScroll, scroll+5);  redraw()
     elseif k==keys.backspace then
-      if invShown then invShown=false; scroll=0; feedback=""; redraw()
+      if helpShown then helpShown=false; scroll=0; redraw()
+      elseif invShown then invShown=false; scroll=0; feedback=""; redraw()
       elseif selected then selected=nil; scroll=0; feedback=""; redraw() end
     end
 
@@ -405,14 +483,18 @@ while true do
     local cmd = hitButton(ev[3], ev[4])
     if cmd then
       if cmd:sub(1,4)=="sel:" then
-        selected = tonumber(cmd:sub(5)); scroll=0; feedback=""; redraw()
+        selected = tonumber(cmd:sub(5)); invShown=false; helpShown=false; scroll=0; feedback=""; redraw()
       elseif cmd=="back" then
-        selected=nil; invShown=false; scroll=0; feedback=""; redraw()      -- Retour -> liste
+        selected=nil; invShown=false; helpShown=false; scroll=0; feedback=""; redraw()  -- Retour -> liste
       elseif cmd=="inv" then
         if not invShown then scroll=0 end                                  -- ouverture: haut ; refresh: garde
         invShown=true; send("inv"); redraw()
       elseif cmd=="invback" then
         invShown=false; scroll=0; feedback=""; redraw()                    -- recolte -> detail
+      elseif cmd=="help" then
+        helpShown=true; scroll=0; redraw()                                 -- ouvre l'aide
+      elseif cmd=="helpback" then
+        helpShown=false; scroll=0; redraw()                                -- aide -> detail
       elseif cmd=="scrollup" then
         scroll = math.max(0, scroll-1); redraw()
       elseif cmd=="scrolldn" then
