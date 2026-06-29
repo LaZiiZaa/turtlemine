@@ -15,6 +15,7 @@ contrôle à distance, pour [CC: Tweaked](https://tweaked.cc/) (Minecraft).
 | `install_tortue.lua` | Tortue | Installe `minenet` + `mine` + `startup` (reprise). |
 | `install_tablette.lua` | Pocket | Installe `minenet` + `remote` + `startup`. |
 | `install_ordinateur.lua` | Ordinateur | Installe `minenet` + `remote` + `startup` (affichage sur moniteur si présent). |
+| `menu.lua` | Tous | Gestionnaire interactif : mettre à jour, réinstaller, lancer, tout supprimer, redémarrer. |
 
 ## Installation
 
@@ -38,7 +39,25 @@ wget https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/install_ordinate
 install_ordinateur
 ```
 
-Chaque script télécharge le bon set de fichiers (dont le bon `startup`) puis redémarre l'appareil.
+Chaque script télécharge le bon set de fichiers (dont le bon `startup` et `menu.lua`) puis redémarre l'appareil.
+
+## Mise à jour & gestion (`menu.lua`)
+
+Pas besoin de tout supprimer pour mettre à jour : les fichiers sont **écrasés**
+en place (les données comme `.mine_state` sont conservées). Le gestionnaire
+`menu` (installé automatiquement) propose un menu :
+
+```
+menu
+```
+
+- **Mettre à jour** — re-télécharge et écrase, garde les données.
+- **Réinstallation propre** — supprime puis re-télécharge.
+- **Lancer** — démarre `mine` / `remote`.
+- **Tout supprimer** — efface les fichiers installés.
+- **Redémarrer / Quitter**.
+
+Navigable au clavier (flèches + Entrée, ou le chiffre) **et** à la souris/tactile.
 
 ## Matériel
 

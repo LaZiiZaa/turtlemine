@@ -13,6 +13,7 @@ local FILES = {
   { "minenet.lua", "minenet.lua", "module reseau" },
   { "mine.lua",    "mine.lua",    "programme de minage" },
   { "startup.lua", "startup.lua", "demarrage auto (reprise)" },
+  { "menu.lua",    "menu.lua",    "gestionnaire (maj/suppr)" },
 }
 
 -------------------------------------------------------------

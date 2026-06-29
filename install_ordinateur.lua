@@ -15,6 +15,7 @@ local FILES = {
   { "minenet.lua",        "minenet.lua", "module reseau" },
   { "remote.lua",         "remote.lua",  "poste de controle" },
   { "startup_remote.lua", "startup.lua", "demarrage auto (remote)" },
+  { "menu.lua",           "menu.lua",    "gestionnaire (maj/suppr)" },
 }
 
 -------------------------------------------------------------
