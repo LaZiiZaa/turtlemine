@@ -13,6 +13,8 @@ contrôle à distance, pour [CC: Tweaked](https://tweaked.cc/) (Minecraft).
 | `startup.lua` | Tortue | Démarrage auto : reprend la tâche en cours après un reboot. |
 | `startup_remote.lua` | Tablette | Démarrage auto : détecte le modem et lance `remote`. |
 | `install.lua` | Les deux | Installateur : détecte l'appareil et télécharge les bons fichiers. |
+| `webbridge.lua` | Ordi dédié | Passerelle : écoute les tortues (rednet) et POST les stats au serveur web. |
+| `web/server.js` | PC / VPS | Serveur Node (zéro dépendance) + tableau de bord temps réel (SSE). |
 
 ## Installation rapide (recommandée)
 
@@ -48,3 +50,10 @@ Sur la tablette : lance `remote` (ou laisse le startup le faire). Clique/tape un
 tortue pour la suivre, puis utilise les boutons. Le bouton **Inv** affiche tout
 ce que la tortue a miné depuis le début de la tâche (y compris ce qui a déjà été
 déposé dans les coffres).
+
+## Tableau de bord web (temps réel)
+
+Optionnel : visualise toutes les tortues dans ton navigateur. Voir
+[`web/README.md`](web/README.md). En résumé : `node web/server.js` sur ton PC,
+puis lance `webbridge.lua` sur un ordinateur CC dédié (avec modem). ⚠️ l'API HTTP
+de CC bloque les IP privées par défaut — détails dans le README web.
