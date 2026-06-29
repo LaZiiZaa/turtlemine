@@ -11,22 +11,34 @@ contrôle à distance, pour [CC: Tweaked](https://tweaked.cc/) (Minecraft).
 | `remote.lua` | Tablette | Pocket Computer / ordinateur de contrôle : suit toutes les tortues en temps réel, vue détail, commandes (pause / reprise / retour base / arrêt / restart / inventaire). Affichage **responsive**, diffusion sur un **moniteur** si présent. |
 | `minenet.lua` | Les deux | Module réseau partagé (protocole rednet commun). |
 | `startup.lua` | Tortue | Démarrage auto : reprend la tâche en cours après un reboot. |
-| `startup_remote.lua` | Tablette | Démarrage auto : détecte le modem et lance `remote`. |
-| `install.lua` | Les deux | Installateur : détecte l'appareil et télécharge les bons fichiers. |
-| `webbridge.lua` | Ordi dédié | Passerelle : écoute les tortues (rednet) et POST les stats au serveur web. |
-| `web/server.js` | PC / VPS | Serveur Node (zéro dépendance) + tableau de bord temps réel (SSE). |
+| `startup_remote.lua` | Tablette/Ordi | Démarrage auto : détecte le modem et lance `remote`. |
+| `install_tortue.lua` | Tortue | Installe `minenet` + `mine` + `startup` (reprise). |
+| `install_tablette.lua` | Pocket | Installe `minenet` + `remote` + `startup`. |
+| `install_ordinateur.lua` | Ordinateur | Installe `minenet` + `remote` + `startup` (affichage sur moniteur si présent). |
 
-## Installation rapide (recommandée)
+## Installation
 
-Sur **chaque** appareil (tortue et tablette), avec HTTP activé :
+Sur **chaque** appareil, avec HTTP activé, lance le script dédié.
 
+**Tortue :**
 ```
-wget https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/install.lua install.lua
-install
+wget https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/install_tortue.lua install_tortue.lua
+install_tortue
 ```
 
-L'installateur détecte automatiquement s'il tourne sur une **tortue** ou sur une
-**tablette** et installe le set adapté (dont le bon `startup.lua`), puis redémarre.
+**Tablette (Pocket Computer) :**
+```
+wget https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/install_tablette.lua install_tablette.lua
+install_tablette
+```
+
+**Ordinateur de contrôle :**
+```
+wget https://raw.githubusercontent.com/LaZiiZaa/turtlemine/main/install_ordinateur.lua install_ordinateur.lua
+install_ordinateur
+```
+
+Chaque script télécharge le bon set de fichiers (dont le bon `startup`) puis redémarre l'appareil.
 
 ## Matériel
 
@@ -46,14 +58,7 @@ mine tunnel   <long> [haut] [larg]     -- tunnel
 mine excavate <long> <larg> <prof>     -- volume (prof 0 = jusqu'à la bedrock)
 ```
 
-Sur la tablette : lance `remote` (ou laisse le startup le faire). Clique/tape une
-tortue pour la suivre, puis utilise les boutons. Le bouton **Inv** affiche tout
-ce que la tortue a miné depuis le début de la tâche (y compris ce qui a déjà été
-déposé dans les coffres).
-
-## Tableau de bord web (temps réel)
-
-Optionnel : visualise toutes les tortues dans ton navigateur. Voir
-[`web/README.md`](web/README.md). En résumé : `node web/server.js` sur ton PC,
-puis lance `webbridge.lua` sur un ordinateur CC dédié (avec modem). ⚠️ l'API HTTP
-de CC bloque les IP privées par défaut — détails dans le README web.
+Sur la tablette / l'ordinateur : lance `remote` (ou laisse le startup le faire).
+Clique/tape une tortue pour la suivre, puis utilise les boutons. Le bouton **Inv**
+affiche tout ce que la tortue a miné depuis le début de la tâche (y compris ce qui
+a déjà été déposé dans les coffres).
