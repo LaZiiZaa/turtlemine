@@ -135,6 +135,18 @@ local function actRun()
   shell.run(RUNCMD)        -- rend la main au menu quand le programme se termine
 end
 
+-- Tortue : passe en mode "attente d'un ordre" (demarrage d'un preset depuis la tablette).
+local function actWait()
+  reset(); term.clear(); term.setCursorPos(1,1)
+  if not (fs.exists("mine") or fs.exists("mine.lua")) then
+    pT("red"); print("mine n'est pas installe."); reset()
+    print("Fais d'abord 'Mettre a jour'."); pause(); return
+  end
+  pT("cyan"); print("Attente des ordres de la tablette..."); reset()
+  pT("lightGray"); print("(une touche sur la tortue annule)"); reset()
+  shell.run("mine", "wait")   -- attend un preset, mine, puis rend la main au menu
+end
+
 local function actDelete()
   if not confirm("TOUT SUPPRIMER : efface les fichiers du programme ?") then return end
   reset(); term.clear(); term.setCursorPos(1,1)
@@ -149,19 +161,18 @@ end
 -- Boucle du menu
 -------------------------------------------------------------
 local running = true
-local items = {
-  { "Lancer ("..RUNCMD..")",             actRun },
-  {},
-  { "MAJ (garde les donnees)", actUpdate },
-  {},
-  { "Reinstall",             actReinstall },
-  {},
-  { "Delete All-MAJ",                    actDelete },
-  {},
-  { "Reboot",                        function() os.reboot() end },
-  {},
-  { "Quit",                           function() running = false end },
-}
+local items = { { "Lancer ("..RUNCMD..")", actRun }, {} }
+if isTurtle then                                   -- demarrage a distance (tablette)
+  items[#items+1] = { "Attendre les ordres", actWait }
+  items[#items+1] = {}
+end
+for _, it in ipairs({
+  { "MAJ (garde les donnees)", actUpdate }, {},
+  { "Reinstall",               actReinstall }, {},
+  { "Delete All-MAJ",          actDelete }, {},
+  { "Reboot",                  function() os.reboot() end }, {},
+  { "Quit",                    function() running = false end },
+}) do items[#items+1] = it end
 
 local sel = 1
 local function draw()

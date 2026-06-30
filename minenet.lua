@@ -22,7 +22,8 @@
 
     -- Commande envoyee a une tortue (ou a toutes) :
     { type="cmd", target=<id|"all">,
-      cmd="pause"|"resume"|"return"|"stop"|"stats"|"restart"|"inv" }
+      cmd="pause"|"resume"|"return"|"stop"|"stats"|"restart"|"inv"|"start",
+      preset=<string> }          -- 'preset' : uniquement pour cmd="start"
 
     -- Inventaire renvoye par une tortue (reponse a la commande "inv") :
     { type="inv", id=<number>, label=<string|nil>,
@@ -34,6 +35,24 @@ local M = {}
 
 M.PROTOCOL  = "turtlemine"   -- protocole rednet commun
 M.OFFLINE   = 4              -- secondes sans message => tortue "hors-ligne" (cote tablette)
+
+-- Presets de minage proposes depuis la tablette (demarrage a distance).
+-- Partages tortue <-> tablette pour rester synchronises : la tortue construit
+-- le job complet a partir de ces descripteurs (mine.lua -> buildPresetJob).
+-- depot = "home" : coffre de VIDAGE derriere la tortue + coffre de CARBURANT a
+-- sa GAUCHE (jamais casse ; plein "refuel all" au depart). Filtrage minerais +
+-- vein mining actives. Place la tortue au bord GAUCHE de la zone a creuser.
+M.PRESETS = {
+  { name = "Tunnel",      mode = "tunnel",
+    length = 32, width = 3, height = 3,
+    vein = true, keep = "ores", deposit = "home" },
+  { name = "Excavatrice", mode = "excavate",
+    length = 8, width = 8, bedrock = true,
+    vein = true, keep = "ores", deposit = "home" },
+  { name = "Alternance",  mode = "excavate",
+    length = 8, width = 8, bedrock = true, alternate = true,
+    vein = true, keep = "ores", deposit = "home" },
+}
 
 -- Ouvre le premier modem disponible (sans fil de preference). Renvoie true si ok.
 function M.openModem()
@@ -64,8 +83,14 @@ function M.sendInventory(invTbl)
 end
 
 -- Envoie une commande a une tortue precise (id) ou a toutes ("all").
-function M.sendCommand(targetId, cmd)
-  rednet.broadcast({ type = "cmd", target = targetId, cmd = cmd }, M.PROTOCOL)
+-- 'extra' (optionnel) : champs supplementaires fusionnes dans le message
+-- (ex. { preset="Alternance" } pour cmd="start").
+function M.sendCommand(targetId, cmd, extra)
+  local m = { type = "cmd", target = targetId, cmd = cmd }
+  if type(extra) == "table" then
+    for k, v in pairs(extra) do if m[k] == nil then m[k] = v end end
+  end
+  rednet.broadcast(m, M.PROTOCOL)
 end
 
 return M

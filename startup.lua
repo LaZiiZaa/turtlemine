@@ -18,8 +18,10 @@ if turtle and fs.exists(".mine_state") then
   print("Tache de minage detectee : reprise automatique...")
   sleep(1)                       -- laisse le monde / les peripheriques se stabiliser
   shell.run("mine", "resume")    -- reprend sans poser de question
+  -- a la fin du job, on enchaine sur le menu ci-dessous (hub : relancer, attendre...)
+end
 
-elseif fs.exists("menu.lua") or fs.exists("menu") then
+if fs.exists("menu.lua") or fs.exists("menu") then
   shell.run("menu")
 
 else

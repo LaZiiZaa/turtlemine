@@ -2,11 +2,16 @@
   mine.lua  v2  —  Tortue de minage pour CC: Tweaked
   ------------------------------------------------------------
   Modes      : tunnel (couloir)  |  excavate (volume)
+  Presets    : excavate "alternance" -> mine 1 couche sur 2 (1,3,5...),
+               saute les couches paires (traversee par le puits central).
+               Active automatiquement le filtrage minerais + le vein mining.
+               Objectif : creuser vite de gros volumes en economisant
+               carburant/usure/temps, sans manquer les minerais.
   Filtrage   : ne garde QUE les minerais (jette roche/terre)
   Extensions :
     [1] Depot auto quand l'inventaire est plein
-        - "ender" : coffre de l'Ender pose sur place (aucun trajet)
-        - "home"  : retour au coffre place SOUS le point de depart
+        - "home" : retour a la base (coffre de vidage ARRIERE + carburant GAUCHE)
+        - "off"  : aucun depot (surplus perdu)
     [2] Calcul/verification du carburant avant de partir
     [4] Reprise apres coupure (etat sauvegarde dans un fichier)
     [5] Menu interactif au lancement (ou arguments en ligne)
@@ -14,9 +19,10 @@
   Usage :
     mine                       -> menu interactif
     mine tunnel   <long> [haut] [larg] [tout|rien]
-    mine excavate <long> <larg> <prof> [tout|rien]   (prof 0 = jusqu'a la bedrock)
+    mine excavate <long> <larg> <prof> [tout|rien] [alt]   (prof 0 = jusqu'a la bedrock)
     -> "tout" = garder tous les blocs ; "rien" = creuser sans rien garder
        (defaut : garder seulement les minerais)
+    -> "alt"  = preset alternance de couches (1 sur 2) ; force minerais + veines
 ============================================================]]--
 
 if not turtle then error("A executer sur une TORTUE.", 0) end
@@ -33,8 +39,7 @@ local FUEL_VALUE    = {
   ["minecraft:coal"]=80, ["minecraft:charcoal"]=80,
   ["minecraft:blaze_rod"]=120, ["minecraft:lava_bucket"]=1000,
 }
-local ENDER_CHEST_ID = "minecraft:ender_chest"  -- objet utilise en mode "ender"
-local DEFAULT_DEPOSIT= "ender"                  -- depot par defaut en ligne de commande
+local DEFAULT_DEPOSIT= "home"                   -- depot par defaut en ligne de commande
 local VEIN_MINE      = true
 local KEEP_FUEL      = true
 local FUEL_BUFFER    = 10
@@ -119,8 +124,9 @@ local function describe(j)
     return ("Tunnel L=%d l=%d h=%d (bloc %d/%d)"):format(j.length, j.width or 1, j.height, j.progress.i, j.length)
   end
   local d = j.bedrock and "bedrock" or tostring(j.depth)
-  return ("Excavate L=%d l=%d prof=%s (couche %d)")
-    :format(j.length, j.width or 1, d, j.progress.layer or 0)
+  local mode = j.alternate and "Excavate(alt)" or "Excavate"
+  return ("%s L=%d l=%d prof=%s (couche %d)")
+    :format(mode, j.length, j.width or 1, d, j.progress.layer or 0)
 end
 
 -------------------------------------------------------------
@@ -170,13 +176,14 @@ local function estimateFuel(j)
     base = j.length*perCell + 2*j.length + 10                -- + un aller-retour
   else
     local depth = j.bedrock and 64 or j.depth                -- bedrock : estimation ~64 couches
-    base = j.length*j.width*depth + depth                    -- volume + descentes
+    local mined = j.alternate and math.ceil(depth/2) or depth -- alternance : ~1 couche sur 2 minee
+    base = j.length*j.width*mined + depth                    -- volume mine + descentes (toutes couches)
          + (j.length + j.width + depth) + 10                 -- retour
   end
   return math.ceil(base * 1.2)                               -- marge 20%
 end
 local function checkFuel(j)
-  if j.mode=="tunnel" and j.deposit=="home" then
+  if j.deposit=="home" then
     print("Carburant : ravitaillement auto via le coffre de gauche.")
     return true
   end
@@ -397,22 +404,16 @@ local function isKeep(name)
   local k = keepMode()
   if k=="all" then return true end
   if KEEP_FUEL and FUEL_ITEMS[name] then return true end   -- carburant : toujours garde
-  if name==ENDER_CHEST_ID then return true end             -- coffre Ender : toujours garde
   if k=="none" then return false end                       -- "rien" : on jette tout le reste
   return isOre(name)                                        -- "ores" : on garde les minerais
 end
--- objets a verser dans le coffre / coffre de l'Ender
+-- objets a verser dans le coffre de vidage (base)
 local function isDepositable(name)
-  if name==ENDER_CHEST_ID then return false end            -- on garde le coffre
   if KEEP_FUEL and FUEL_ITEMS[name] then return false end   -- on garde le carburant
   local k = keepMode()
   if k=="none" then return false end                       -- rien a deposer (tout jete au sol)
   if k=="all"  then return true end                        -- on depose tout le reste
   return isOre(name)                                        -- seulement les minerais
-end
-local function findItem(id)
-  for s=1,16 do local d=turtle.getItemDetail(s); if d and d.name==id then return s end end
-  return nil
 end
 local function cleanInventory()
   for s=1,16 do
@@ -429,29 +430,19 @@ end
 -------------------------------------------------------------
 -- DEPOT [1]
 -------------------------------------------------------------
-local function depositEnder()
-  local slot = findItem(ENDER_CHEST_ID)
-  if not slot then statusMsg="Pas de coffre de l'Ender !"; return end
-  state="Depot"; statusMsg="Depot (coffre de l'Ender)"
-  stats.deposits = stats.deposits + 1
-  turtle.digUp()
-  turtle.select(slot)
-  if not turtle.placeUp() then turtle.digUp(); turtle.placeUp() end
-  for s=1,16 do
-    local d=turtle.getItemDetail(s)
-    if d and isDepositable(d.name) then turtle.select(s); turtle.dropUp() end
-  end
-  turtle.select(1)
-  turtle.digUp()                 -- recupere le coffre
-end
--- TUNNEL : coffre de vidage a l'ARRIERE, coffre carburant a GAUCHE du depart
-local function initFuelTunnel()
+-- BASE (mode "home", tunnel ET excavatrice) :
+--   coffre de VIDAGE a l'ARRIERE du depart, coffre de CARBURANT a GAUCHE.
+--   La tortue ne casse jamais ces coffres (elle ne fait que suck/drop ;
+--   en excavatrice la zone est creusee vers l'avant/droite, cf digLayerCentered).
+-- Plein initial avant de partir : aspire le carburant du coffre gauche + refuel all.
+local function initFuelHome()
   face(3)                                    -- coffre carburant (gauche)
   for _=1,REFUEL_GRAB do if not turtle.suck() then break end end
-  refuelAll()
+  refuelAll()                                -- brule tout le carburant recupere
   face(0)
 end
-local function serviceAtHomeTunnel()
+-- Retour a la base : vide dans le coffre arriere + refait le plein au coffre gauche.
+local function serviceAtHome()
   local wx,wy,wz,wh = pos.x,pos.y,pos.z,heading
   state="Ravitaillement"; statusMsg="Vidage + plein au depart"
   stats.deposits = stats.deposits + 1
@@ -474,31 +465,12 @@ local function serviceAtHomeTunnel()
   end
   gotoWork(wx,wy,wz,wh)                        -- repart au chantier
 end
-local function depositHome()
-  if job.mode=="tunnel" then serviceAtHomeTunnel(); return end
-  -- EXCAVATE : coffre de vidage a l'ARRIERE du point de depart (en surface)
-  local wx,wy,wz,wh = pos.x,pos.y,pos.z,heading
-  state="Depot"; statusMsg="Vidage au depart"
-  stats.deposits = stats.deposits + 1
-  goToStart()
-  face(2)
-  for s=1,16 do
-    local d=turtle.getItemDetail(s)
-    if d and isDepositable(d.name) then
-      turtle.select(s)
-      if not turtle.drop() then statusMsg="Coffre arriere plein/absent" end
-    end
-  end
-  turtle.select(1)
-  statusMsg="Retour au chantier"
-  gotoWork(wx,wy,wz,wh)
-end
+local function depositHome() serviceAtHome() end   -- vidage + plein (tunnel comme excavatrice)
 local function manageInventory()
   if not inventoryFull() then return end
   cleanInventory()
   if not inventoryFull() then return end          -- de la place liberee, ok
-  if     job.deposit=="ender" then depositEnder()
-  elseif job.deposit=="home"  then depositHome()
+  if job.deposit=="home" then depositHome()
   else statusMsg="Inventaire plein (depot off) : surplus perdu" end
 end
 -- retour d'urgence : rentre au depart et s'arrete
@@ -512,8 +484,8 @@ local function fuelGuard(j)
   if not fuelLow(j) then return end
   ensureFuel()                       -- d'abord bruler le charbon en stock
   if not fuelLow(j) then return end
-  if j.mode=="tunnel" and j.deposit=="home" then
-    serviceAtHomeTunnel()            -- va se ravitailler (peut declencher l'arret)
+  if j.deposit=="home" then
+    serviceAtHome()                  -- va se ravitailler au coffre gauche (peut declencher l'arret)
   else
     emergencyHome()
   end
@@ -549,7 +521,7 @@ end
 -------------------------------------------------------------
 local function runTunnel(j)
   state = "Minage"; statusMsg = ("Tunnel %dx%dx%d"):format(j.length, j.width or 1, j.height)
-  if j.deposit=="home" then initFuelTunnel() end   -- premier plein depuis le coffre de gauche
+  if j.deposit=="home" and not resumed then initFuelHome() end   -- plein initial (coffre gauche)
   for i=j.progress.i+1, j.length do
     fuelGuard(j); controlCheck(); if aborted then break end
     recording=true
@@ -565,12 +537,15 @@ end
 -------------------------------------------------------------
 -- MODE EXCAVATRICE (footprint L x l, sur 'prof' couches)
 -------------------------------------------------------------
--- creuse UNE couche L x l, centree sur la colonne de depart, en serpentin.
+-- creuse UNE couche L x l en serpentin. Par defaut CENTREE sur la colonne de
+-- depart ; en mode "home" la zone est ancree a DROITE (left=0) pour ne JAMAIS
+-- toucher le coffre de carburant place a GAUCHE de la tortue (place la tortue
+-- au bord gauche de la zone a creuser).
 -- La tortue commence et finit (via le retour du runExcavate) sur la colonne du depart.
 -- Renvoie false si bloquee (bedrock dans la couche, etc.).
 local function digLayerCentered(j)
   local W = j.width or 1
-  local left = math.floor((W-1)/2)
+  local left = (j.deposit=="home") and 0 or math.floor((W-1)/2)
   for _=1,left do                         -- aller au bord gauche (z = -left)
     fuelGuard(j); controlCheck(); if aborted then return false end
     turnLeft(); digFront()
@@ -601,17 +576,31 @@ local function digLayerCentered(j)
   return true
 end
 
+-- En mode "alternance", on ne mine qu'une couche sur deux (1, 3, 5...) :
+-- les couches paires sont seulement traversees par le puits central.
+local function shouldMineLayer(j, d)
+  if not j.alternate then return true end
+  return ((d+1) % 2) == 1               -- couche d+1 impaire -> on mine
+end
+
 local function runExcavate(j)
   local depthLabel = j.bedrock and "bedrock" or tostring(j.depth)
-  state = "Minage"; statusMsg = ("Excavate %dx%d prof=%s"):format(j.length, j.width or 1, depthLabel)
+  local label = j.alternate and "Excav.alt" or "Excavate"
+  state = "Minage"; statusMsg = ("%s %dx%d prof=%s"):format(label, j.length, j.width or 1, depthLabel)
   gotoX(0); gotoZ(0); face(0)             -- colonne du depart au niveau courant (reprise OK)
+  if j.deposit=="home" and not resumed then initFuelHome() end   -- plein initial (coffre gauche)
   while true do
     local d = -pos.y                       -- profondeur courante (0 = surface)
     j.progress = { layer = d+1 }
-    local ok = digLayerCentered(j)
-    if aborted then return end
-    gotoX(0); gotoZ(0); face(0)            -- revient sur la colonne du depart
-    saveState()
+    local ok = true
+    if shouldMineLayer(j, d) then
+      ok = digLayerCentered(j)
+      if aborted then return end
+      gotoX(0); gotoZ(0); face(0)          -- revient sur la colonne du depart
+      saveState()
+    else
+      statusMsg = "Couche "..(d+1).." ignoree (alternance)"  -- on traverse sans miner
+    end
     if not ok then break end               -- couche bloquee -> on s'arrete
     if (not j.bedrock) and (d+1) >= j.depth then break end   -- profondeur atteinte
     fuelGuard(j); controlCheck(); if aborted then return end
@@ -632,7 +621,8 @@ local function estimatedTotalBlocks(j)
   if not j then return nil end
   if j.mode=="tunnel" then return j.length*(j.width or 1)*(j.height or 1) end
   if j.bedrock then return nil end
-  return j.length*(j.width or 1)*(j.depth or 1)
+  local layers = j.alternate and math.ceil((j.depth or 1)/2) or (j.depth or 1)  -- alternance : 1 couche/2
+  return j.length*(j.width or 1)*layers
 end
 local function progressFraction()
   local total = estimatedTotalBlocks(job)
@@ -710,7 +700,8 @@ end
 local COLOR = (term and term.isColour and term.isColour()) or false
 local STATE_COL = {
   Minage="lime", Depot="orange", Ravitaillement="orange", Retour="cyan",
-  Pause="yellow", Termine="green", Erreur="red", Init="lightGray",
+  Pause="yellow", Stoppe="orange", Attente="lightBlue",
+  Termine="green", Erreur="red", Init="lightGray",
 }
 local function paintT(c) if COLOR and colors then term.setTextColour(colors[c] or colors.white) end end
 local function paintB(c) if COLOR and colors then term.setBackgroundColour(colors[c] or colors.black) end end
@@ -809,22 +800,30 @@ local function loadNet()
   end
 end
 
--- (assignation de la declaration anticipee) : pause / retour / arret a chaque cellule
+-- (assignation de la declaration anticipee) : pause / arret doux / retour, a chaque cellule.
+--   pause  : halte legere (non sauvegardee), reprend avec "resume".
+--   stop   : halte SAUVEGARDEE mais le programme RESTE en vie et a l'ecoute
+--            (etat "Stoppe") -> "resume"/"restart" utilisables a distance ;
+--            "return" interrompt pour rentrer.
+--   return : rentre au depart puis termine.
 function controlCheck()
-  if paused then
-    while paused and not stopRequested and not homeRequested and not aborted do
-      state="Pause"; os.sleep(0.2)
-    end
-    if not (homeRequested or stopRequested or aborted) then state="Minage" end
+  -- Boucle d'attente unifiee : couvre la pause ET l'arret doux, y compris une
+  -- transition pause -> stop recue en cours d'attente (traitee immediatement).
+  local saved = false
+  while (paused or stopRequested) and not homeRequested and not aborted do
+    if stopRequested and not saved then saveState(); saved = true end  -- sauvegarde une fois
+    state = stopRequested and "Stoppe" or "Pause"
+    os.sleep(0.2)                          -- yield : la tache reseau reste a l'ecoute
   end
-  if homeRequested or stopRequested then aborted = true end
+  if not (homeRequested or aborted) then state = "Minage" end
+  if homeRequested then aborted = true end  -- seul "return" interrompt le job
 end
 
 -- applique une commande recue de la tablette
 local function handleCommand(cmd)
   if     cmd=="pause"   then paused=true
-  elseif cmd=="resume"  then paused=false
-  elseif cmd=="return"  then homeRequested=true; paused=false
+  elseif cmd=="resume"  then paused=false; stopRequested=false   -- leve pause ET arret doux
+  elseif cmd=="return"  then homeRequested=true; paused=false; stopRequested=false
   elseif cmd=="stop"    then stopRequested=true; paused=false
   elseif cmd=="restart" then saveState(); os.reboot()
   elseif cmd=="stats"   then if net then net.sendState(buildState()) end
@@ -866,6 +865,86 @@ local function uiNetTask()
 end
 
 -------------------------------------------------------------
+-- ATTENTE D'UN ORDRE (demarrage a distance depuis la tablette)
+-------------------------------------------------------------
+-- Construit un job complet a partir d'un preset partage (minenet.M.PRESETS).
+local function buildPresetJob(name)
+  if not (net and net.PRESETS) then return nil end
+  local p
+  for _, pp in ipairs(net.PRESETS) do if pp.name == name then p = pp; break end end
+  if not p then return nil end
+  local j = { mode = p.mode, vein = p.vein and true or false,
+              keep = p.keep or "ores", deposit = p.deposit or "home",
+              remote = true }                       -- 'remote' : pas de question interactive
+  if p.mode == "tunnel" then
+    j.length = p.length; j.width = p.width or 1; j.height = p.height or 3
+    j.progress = { i = 0 }
+  else
+    j.length = p.length; j.width = p.width or 1
+    if p.bedrock then j.bedrock = true else j.depth = p.depth end
+    if p.alternate then j.alternate = true end
+    j.progress = { layer = 0 }
+  end
+  return j
+end
+
+-- Petit ecran "en attente d'un ordre" (avant qu'un job ne demarre).
+local function drawWaitScreen()
+  if not term then return end
+  local w, h = term.getSize()
+  paintB("black"); term.clear(); term.setCursorPos(1,1)
+  paintT("white"); term.write(("== MINEUR "..(buildState().label or "").." =="):sub(1, w))
+  paintT("lightBlue"); term.setCursorPos(1,3); term.write("En attente d'un ordre (tablette)...")
+  paintT("lightGray"); term.setCursorPos(1,5); term.write("Presets disponibles :")
+  paintT("white")
+  if net and net.PRESETS then
+    local y = 6
+    for _, p in ipairs(net.PRESETS) do
+      if y >= h then break end
+      term.setCursorPos(1, y); term.write((" - "..p.name):sub(1, w)); y = y + 1
+    end
+  end
+  paintT("lightGray"); term.setCursorPos(1, h); term.write(("[ une touche = menu ]"):sub(1, w))
+  paintT("white")
+end
+
+-- Boucle d'attente : diffuse l'etat "Attente" (~1 Hz) et ecoute les ordres.
+-- Renvoie un job (commande "start" recue) ou nil (annulation clavier / pas de modem).
+local function waitForStart()
+  if not net then loadNet() end
+  if not net then
+    print("Pas de modem : impossible d'attendre les ordres de la tablette.")
+    return nil
+  end
+  state = "Attente"; statusMsg = ""; stats.startClock = os.clock()
+  drawWaitScreen()
+  local timer = os.startTimer(1)
+  while true do
+    local ev = { os.pullEvent() }
+    if ev[1]=="timer" and ev[2]==timer then
+      net.sendState(buildState())          -- visible comme "Attente" sur la tablette
+      drawWaitScreen()
+      timer = os.startTimer(1)
+    elseif ev[1]=="rednet_message" then
+      local msg = ev[3]
+      local myId = os.getComputerID and os.getComputerID()
+      if type(msg)=="table" and msg.type=="cmd"
+         and (msg.target=="all" or msg.target==myId) then
+        if msg.cmd=="start" then
+          local j = buildPresetJob(msg.preset)
+          if j then return j end
+          statusMsg = "Preset inconnu: "..tostring(msg.preset)
+        elseif msg.cmd=="stats" then
+          net.sendState(buildState())
+        end                                  -- autres commandes ignorees en attente
+      end
+    elseif ev[1]=="key" or ev[1]=="char" then
+      return nil                            -- une touche annule l'attente -> retour menu
+    end
+  end
+end
+
+-------------------------------------------------------------
 -- MENU INTERACTIF [5]
 -------------------------------------------------------------
 local function menu()
@@ -877,6 +956,7 @@ local function menu()
   local m
   repeat write("Choix [1]: "); local r=read(); if r=="" then r="1" end; m=tonumber(r) until m==1 or m==2
   local j = {}
+  local presetLocked = false   -- un preset impose deja vein + filtrage (questions sautees)
   if m==1 then
     j.mode="tunnel"
     j.length = askNum("Longueur", 20)
@@ -885,28 +965,42 @@ local function menu()
     j.progress = { i=0 }
   else
     j.mode="excavate"
+    print("Preset :")
+    print("  1) Standard (toutes les couches)")
+    print("  2) Alternance de couches (1 sur 2)")
+    print("     -> rapide/eco : mine 1, saute 2, mine 3...")
+    print("     -> active filtrage minerais + vein mining")
+    local p
+    repeat write("Choix [1]: "); local r=read(); if r=="" then r="1" end; p=tonumber(r) until p==1 or p==2
     j.length = askNum("Longueur (vers l'avant)", 8)
     j.width  = askNum("Largeur (centree)", 8)
     j.depth  = askNum("Profondeur (couches, 0 = jusqu'a la bedrock)", 4)
     if j.depth <= 0 then j.bedrock = true; j.depth = nil end
     j.progress = { layer=0 }
+    if p==2 then
+      j.alternate = true
+      j.vein = true       -- vein mining impose par le preset
+      j.keep = "ores"     -- filtrage des minerais par defaut
+      presetLocked = true
+    end
   end
-  j.vein = yesno("Suivre les veines de minerai ?", "o")
-  print("Que conserver ?")
-  print("  1) Seulement les minerais")
-  print("  2) Tout recuperer")
-  print("  3) Ne rien recuperer (creuser uniquement)")
-  local k
-  repeat write("Choix [1]: "); local r=read(); if r=="" then r="1" end; k=tonumber(r) until k==1 or k==2 or k==3
-  j.keep = (k==2 and "all") or (k==3 and "none") or "ores"
+  if not presetLocked then
+    j.vein = yesno("Suivre les veines de minerai ?", "o")
+    print("Que conserver ?")
+    print("  1) Seulement les minerais")
+    print("  2) Tout recuperer")
+    print("  3) Ne rien recuperer (creuser uniquement)")
+    local k
+    repeat write("Choix [1]: "); local r=read(); if r=="" then r="1" end; k=tonumber(r) until k==1 or k==2 or k==3
+    j.keep = (k==2 and "all") or (k==3 and "none") or "ores"
+  end
   print("Depot quand plein :")
-  print("  1) Aucun (surplus jete)")
-  print("  2) Coffre de l'Ender (sur place)")
-  print("  3) Coffre de vidage a l'ARRIERE du depart")
-  print("     (en tunnel : + coffre carburant a GAUCHE)")
+  print("  1) Coffres a la base : vidage ARRIERE + carburant GAUCHE")
+  print("     (excavatrice : zone creusee vers l'avant/droite)")
+  print("  2) Aucun (surplus jete)")
   local d
-  repeat write("Choix [2]: "); local r=read(); if r=="" then r="2" end; d=tonumber(r) until d==1 or d==2 or d==3
-  j.deposit = (d==1 and "off") or (d==2 and "ender") or "home"
+  repeat write("Choix [1]: "); local r=read(); if r=="" then r="1" end; d=tonumber(r) until d==1 or d==2
+  j.deposit = (d==2 and "off") or "home"
   return j
 end
 
@@ -935,13 +1029,21 @@ if fs.exists(STATE_FILE) then
   end
 end
 
+-- Demarrage a distance : "mine wait" attend un ordre (preset) de la tablette.
+if not job and args[1]=="wait" then
+  job = waitForStart()
+  if not job then return end          -- annule (touche) ou pas de modem -> retour menu
+end
+
 -- Sinon : arguments ou menu
 if not job then
   if autoResume then print("Aucune tache a reprendre."); return end
   local keep = "ores"                     -- "tout"->all, "rien"/"none"->none
+  local alternate = false                 -- "alt"/"alternance" -> preset alternance de couches
   for _,a in ipairs(args) do
     if     a=="tout" or a=="all" or a=="nofilter" then keep="all"
-    elseif a=="rien" or a=="none" then keep="none" end
+    elseif a=="rien" or a=="none" then keep="none"
+    elseif a=="alt" or a=="alterne" or a=="alternance" then alternate=true end
   end
   if args[1]=="tunnel" and tonumber(args[2]) then
     job = { mode="tunnel", length=tonumber(args[2]), height=tonumber(args[3]) or 3,
@@ -949,17 +1051,22 @@ if not job then
             vein=VEIN_MINE, deposit=DEFAULT_DEPOSIT, progress={ i=0 } }
   elseif args[1]=="excavate" and tonumber(args[2]) and tonumber(args[3]) and tonumber(args[4]) then
     local d = tonumber(args[4])
+    -- preset alternance : impose filtrage minerais + vein mining
     job = { mode="excavate", length=tonumber(args[2]), width=tonumber(args[3]),
-            depth = (d>0 and d or nil), bedrock = (d<=0), keep=keep,
-            vein=VEIN_MINE, deposit=DEFAULT_DEPOSIT, progress={ layer=0 } }
+            depth = (d>0 and d or nil), bedrock = (d<=0),
+            keep = alternate and "ores" or keep, alternate = alternate,
+            vein = alternate or VEIN_MINE, deposit=DEFAULT_DEPOSIT, progress={ layer=0 } }
   else
     job = menu()
   end
 end
 
-if not checkFuel(job) then print("Annule."); return end
-if not (job.mode=="tunnel" and job.deposit=="home") then
-  if not ensureFuel() then return end       -- le mode tunnel+coffres fait son plein tout seul
+-- Verif carburant interactive : ignoree pour un job lance a distance (personne au clavier)
+if not job.remote then
+  if not checkFuel(job) then print("Annule."); return end
+end
+if job.deposit ~= "home" then
+  if not ensureFuel() then return end       -- mode "home" : plein auto via le coffre gauche
 end
 
 -- Init de session : drapeaux, compteurs, reseau
@@ -975,16 +1082,14 @@ loadNet()
 -- Tache de minage : le nettoyage / retour se fait dedans pour que le HUD continue a vivre
 local function miningTask()
   if job.mode=="tunnel" then runTunnel(job) else runExcavate(job) end
-  if stopRequested then
-    state="Termine"; statusMsg="Arret demande (reprise possible)"   -- on garde .mine_state
-  else
-    if not aborted then cleanInventory() end          -- jette les dechets sur place
-    if RETURN_HOME or homeRequested then returnHome(job) end
-    clearState()
-    state="Termine"
-    statusMsg = homeRequested and "Retour demande : termine"
-             or (aborted and "Arrete (carburant)") or "Mission terminee"
-  end
+  -- On n'arrive ici que si le job est FINI ou interrompu par "return"/carburant
+  -- (un simple "stop" reste en attente dans controlCheck, sans quitter).
+  if not aborted then cleanInventory() end            -- jette les dechets sur place
+  if RETURN_HOME or homeRequested then returnHome(job) end
+  clearState()
+  state="Termine"
+  statusMsg = homeRequested and "Retour demande : termine"
+           or (aborted and "Arrete (carburant)") or "Mission terminee"
 end
 
 -- Minage + interface/reseau en parallele ; se termine quand le minage rend la main

@@ -66,7 +66,8 @@ end
 
 local STATE_COL = {
   Minage="lime", Depot="orange", Ravitaillement="orange", Retour="cyan",
-  Pause="yellow", Termine="green", Erreur="red", Init="lightGray",
+  Pause="yellow", Stoppe="orange", Attente="lightBlue",
+  Termine="green", Erreur="red", Init="lightGray",
 }
 local function dirName(d) return ({[0]="+X (E)",[1]="+Z (S)",[2]="-X (O)",[3]="-Z (N)"})[d] or "?" end
 local function fmtTime(s)
@@ -96,6 +97,8 @@ local feedback = ""           -- message transitoire (commande envoyee...)
 local invCache = {}           -- id -> table inventaire recue (type="inv")
 local invShown = false        -- true = on affiche l'inventaire de 'selected'
 local helpShown = false       -- true = on affiche l'aide (liste des commandes)
+local startShown = false      -- true = on affiche le choix de preset (demarrage a distance)
+local startTarget = "all"     -- cible du prochain demarrage : "all" ou un id de tortue
 local scroll    = 0           -- defilement de la vue courante (liste / recolte)
 local maxScroll = 0           -- borne max de defilement (recalculee a chaque affichage)
 
@@ -128,13 +131,12 @@ end
 -- Commandes affichees en boutons : { label (avec raccourci), cmd, couleur }
 -- "back" = retour a la liste (pas une commande envoyee a la tortue).
 local CMDS = {
-  { "P:Pause",   "pause",   "orange" },
-  { "R:Repr",    "resume",  "green"  },
-  { "B:Base",    "return",  "cyan"   },
+  { "P:Pause",   "pause",   "orange"   },
+  { "R:Repr",    "resume",  "green"    },
   { "S:Stop",    "stop",    "red"      },
+  { "B:Base",    "return",  "cyan"     },
   { "I:Inv",     "inv",     "lightBlue"},
   { "Z:Restart", "restart", "purple"   },
-  { "A:Aide",    "help",    "gray"     },
   { "Q:Retour",  "back",    "blue"     },
 }
 
@@ -157,11 +159,12 @@ end
 -- Pied de page commun : boutons de defilement tactiles (si la liste depasse)
 -- + texte d'aide + indicateur de position. 'total' et 'vis' servent juste a
 -- afficher "x-y/total". Responsive : se replie si l'ecran est etroit.
-local function drawFooter(hint, total, vis)
+local function drawFooter(hint, total, vis, extra)
   pB("black"); pT("white")
   local x = 1
+  if extra then x = button(1, H, extra[1], extra[2], extra[3]) end   -- bouton optionnel (ex. Demarrer)
   if maxScroll > 0 then
-    x = button(1, H, "^", "scrollup", "gray")
+    x = button(x, H, "^", "scrollup", "gray")
     x = button(x, H, "v", "scrolldn", "gray")
   end
   pT("lightGray"); term.setCursorPos(x, H)
@@ -231,7 +234,9 @@ local function drawList()
     local nm = (st.label or ("#"..id)):sub(1,10)
     term.write((("%d) %-10s %-6s %s"):format(i, nm, st.state or "?", st.pct and (st.pct.."%") or "")):sub(1, W))
   end
-  drawFooter("chiffre/clic=detail  Q=quitter", #list, rowsVis)
+  -- "Dem.tout" demarre TOUTES les tortues en attente ; selectionner une tortue
+  -- (chiffre/clic) puis "Demarrer" dans sa vue detail n'en lance qu'UNE.
+  drawFooter("chiffre=tortue  D=tout  Q=quit", #list, rowsVis, {"Dem.tout", "startmenu", "lime"})
 end
 
 -- petit libelle gris + valeur coloree, a la position (1,y)
@@ -296,7 +301,12 @@ local function drawDetail(id)
 
   -- Boutons : grille cliquable / tactile qui s'adapte a la largeur, chaque
   -- bouton a sa zone de clic et son raccourci clavier (1re lettre du label).
-  local rows = layoutRows(CMDS)
+  -- Tortue EN ATTENTE : seul "Demarrer" (cette tortue) a du sens, + Retour.
+  local cmds = CMDS
+  if st.state=="Attente" then
+    cmds = { { "D:Demarrer", "startsel", "lime" }, { "Q:Retour", "back", "blue" } }
+  end
+  local rows = layoutRows(cmds)
   local startY = math.max(11, H - #rows)       -- ancre en bas, sous les infos
   for i, row in ipairs(rows) do
     local y, x = startY + (i-1), 1
@@ -369,16 +379,17 @@ end
 -- Aide : liste de toutes les commandes (touche -> action)
 local HELP = {
   { "P", "Pause le minage" },
-  { "R", "Reprendre le minage" },
-  { "B", "Retour a la base" },
-  { "S", "Stop (arret, reprise possible)" },
+  { "R", "Reprendre (leve pause/stop)" },
+  { "S", "Stop doux (halte+sauve, reste a l'ecoute)" },
+  { "B", "Retour a la base (termine)" },
   { "I", "Inventaire / recolte" },
   { "Z", "Restart (redemarre la tortue)" },
+  { "D", "Demarrer : liste=toutes / tortue=celle-ci" },
   { "A", "Aide (cet ecran)" },
   { "Q", "Retour" },
   { "fleches", "Defiler une liste" },
   { "molette", "Defiler (souris)" },
-  { "chiffre", "Choisir une tortue (liste)" },
+  { "chiffre", "Choisir tortue / preset" },
   { "clic/tap", "Activer un bouton" },
 }
 local function drawHelp()
@@ -401,8 +412,55 @@ local function drawHelp()
   term.write((" Q=retour"):sub(1, math.max(0, W - x + 1)))
 end
 
+-- libelle lisible d'un preset (vue Demarrer)
+local function presetLabel(p)
+  if p.mode=="tunnel" then
+    return ("%s  tunnel %dx%dx%d"):format(p.name, p.length, p.width or 1, p.height or 3)
+  end
+  local d = p.bedrock and "bedrock" or tostring(p.depth or 0)
+  return ("%s  excav %dx%d prof %s%s")
+    :format(p.name, p.length, p.width or 1, d, p.alternate and " alt" or "")
+end
+
+-- Vue "Demarrer un preset" : diffuse une commande start a TOUTES les tortues en attente.
+local function drawStart()
+  btns = {}
+  maxScroll = 0
+  clear()
+  pB(COLOR and "blue" or "black"); pT("white")
+  term.setCursorPos(1,1); term.write((" Demarrer un preset"..string.rep(" ", W)):sub(1, W))
+  pB("black")
+  pT("lightGray"); term.setCursorPos(1,2)
+  local who
+  if startTarget=="all" then
+    who = "-> TOUTES les tortues en attente"
+  else
+    local rec = turtles[startTarget]
+    who = "-> tortue "..((rec and rec.st.label) or ("#"..tostring(startTarget)))
+  end
+  term.write(who:sub(1, W))
+  pT("white")
+  local presets = (net and net.PRESETS) or {}
+  if #presets==0 then
+    pT("lightGray"); term.setCursorPos(1,4); term.write("(aucun preset defini dans minenet)")
+  else
+    for i, p in ipairs(presets) do
+      local y = 3 + i
+      if y <= H-1 then
+        btns[#btns+1] = { x=1, y=y, w=W, cmd="start:"..p.name }   -- ligne entiere cliquable
+        term.setCursorPos(1, y); pT("white")
+        term.write((("%d) %s"):format(i, presetLabel(p))):sub(1, W))
+      end
+    end
+  end
+  local x = button(1, H, "Ret", "startback", "blue")
+  pT("lightGray"); term.setCursorPos(x, H)
+  term.write((" chiffre=demarrer  Q=retour"):sub(1, math.max(0, W - x + 1)))
+end
+
 local function redraw()
-  if helpShown and selected then drawHelp()
+  if startShown then drawStart()
+  elseif helpShown and selected then drawHelp()
   elseif selected and invShown then drawInventory(selected)
   elseif selected then drawDetail(selected)
   else drawList() end
@@ -415,6 +473,18 @@ local function send(cmd)
   if not selected then return end
   net.sendCommand(selected, cmd)
   feedback = "-> "..cmd.." envoye"
+end
+
+-- Envoie un demarrage de preset a la cible courante (startTarget : "all" ou un id).
+local function sendStart(name)
+  net.sendCommand(startTarget, "start", { preset = name })
+  local who
+  if startTarget=="all" then who = "toutes en attente"
+  else
+    local rec = turtles[startTarget]
+    who = (rec and rec.st.label) or ("#"..tostring(startTarget))
+  end
+  feedback = "Demarrage '"..name.."' -> "..who
 end
 
 local KEYCMD = { p="pause", r="resume", b="return", s="stop", x="stats", z="restart" }
@@ -444,20 +514,29 @@ while true do
   elseif e=="char" then
     local c = ev[2]:lower()
     if c=="q" then
-      if helpShown then helpShown=false; scroll=0; redraw()                 -- aide -> detail
+      if startShown then startShown=false; feedback=""; redraw()            -- demarrer -> liste
+      elseif helpShown then helpShown=false; scroll=0; redraw()             -- aide -> detail
       elseif invShown then invShown=false; scroll=0; feedback=""; redraw()  -- recolte -> detail
       elseif selected then selected=nil; invShown=false; helpShown=false; scroll=0; feedback=""; redraw()
       else restoreTerm(); clear(); print("Au revoir."); return end
+    elseif startShown then
+      local n = tonumber(ev[2]); local presets = (net and net.PRESETS) or {}
+      if n and presets[n] then sendStart(presets[n].name); startShown=false; redraw() end
     elseif helpShown then
       -- vue aide : seules Q (ci-dessus) et les fleches (key) comptent
     elseif invShown then
       if c=="r" or c=="i" then send("inv"); redraw() end                    -- R = actualiser
     elseif c=="a" and selected then
-      helpShown=true; scroll=0; redraw()                                    -- ouvre l'aide
+      helpShown=true; scroll=0; redraw()                                    -- ouvre l'aide (clavier)
     elseif c=="i" and selected then
       invShown=true; scroll=0; send("inv"); redraw()                        -- ouvre la recolte
     elseif selected then
-      if KEYCMD[c] then send(KEYCMD[c]); redraw() end
+      local rec = turtles[selected]
+      if c=="d" and rec and rec.st.state=="Attente" then
+        startTarget=selected; startShown=true; scroll=0; redraw()           -- demarrer CETTE tortue
+      elseif KEYCMD[c] then send(KEYCMD[c]); redraw() end
+    elseif c=="d" then
+      startTarget="all"; startShown=true; scroll=0; feedback=""; redraw()   -- liste -> demarrer TOUTES
     else
       local n = tonumber(ev[2]); local list = idList()
       if n and list[n] then selected = list[n]; scroll=0; feedback=""; redraw() end
@@ -470,7 +549,8 @@ while true do
     elseif k==keys.pageUp   then scroll = math.max(0, scroll-5);          redraw()
     elseif k==keys.pageDown then scroll = math.min(maxScroll, scroll+5);  redraw()
     elseif k==keys.backspace then
-      if helpShown then helpShown=false; scroll=0; redraw()
+      if startShown then startShown=false; feedback=""; redraw()
+      elseif helpShown then helpShown=false; scroll=0; redraw()
       elseif invShown then invShown=false; scroll=0; feedback=""; redraw()
       elseif selected then selected=nil; scroll=0; feedback=""; redraw() end
     end
@@ -486,6 +566,14 @@ while true do
         selected = tonumber(cmd:sub(5)); invShown=false; helpShown=false; scroll=0; feedback=""; redraw()
       elseif cmd=="back" then
         selected=nil; invShown=false; helpShown=false; scroll=0; feedback=""; redraw()  -- Retour -> liste
+      elseif cmd=="startmenu" then
+        startTarget="all"; startShown=true; scroll=0; feedback=""; redraw()  -- liste -> demarrer TOUTES
+      elseif cmd=="startsel" then
+        startTarget=selected; startShown=true; scroll=0; redraw()            -- detail -> demarrer CETTE tortue
+      elseif cmd=="startback" then
+        startShown=false; feedback=""; redraw()                            -- demarrer -> liste
+      elseif cmd:sub(1,6)=="start:" then
+        sendStart(cmd:sub(7)); startShown=false; redraw()                  -- diffuse le preset a toutes
       elseif cmd=="inv" then
         if not invShown then scroll=0 end                                  -- ouverture: haut ; refresh: garde
         invShown=true; send("inv"); redraw()
