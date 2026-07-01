@@ -112,19 +112,29 @@ mining + dépôt à la base) :
 | Excavatrice | excavatrice 8 × 8 jusqu'à la bedrock |
 | Alternance | excavatrice 8 × 8 jusqu'à la bedrock, 1 couche sur 2 |
 
-**Dépôt « à la base » (mode `home`)** — disposition autour de chaque tortue :
+**Dépôt « à la base » (mode `home`)** — un coffre de **VIDAGE** derrière la tortue
+et un coffre de **CARBURANT** à gauche (jamais cassé : `refuel all` au départ +
+ravitaillements). La tortue revient à la base pour vider les minerais et refaire
+le plein.
+
+- **Tunnel** : coffre carburant **collé à gauche** du départ (la voie part vers
+  l'avant).
+- **Excavatrice (centrée)** : place la tortue **au milieu** de la zone ; le coffre
+  carburant va au **bord gauche** de la zone (1 bloc au-delà du bord), aligné sur
+  la rangée de départ. La tortue s'y rend pour le plein.
 
 ```
-        [tortue]→ zone à creuser (avant / droite)
-   [C]   ↑
-   gauche = coffre CARBURANT (jamais cassé : refuel all au départ + ravitos)
-   derrière la tortue = coffre de VIDAGE (minerais)
-```
+Excavatrice centrée — vue de dessus (avant → droite) :
 
-> Place la tortue **au bord gauche** de la zone (l'excavatrice creuse vers
-> l'avant et la **droite** pour ne pas toucher le coffre carburant). Mets du
-> **carburant** dans le coffre de gauche ; la tortue fait un **refuel all** avant
-> de partir et revient s'y ravitailler / y vider les minerais.
+      C
+      # # # # #     ← bord gauche de la zone
+      # # # # #
+  V   T # # # #     ← T = départ (au MILIEU) ; V = vidage (derrière)
+      # # # # #
+      # # # # #     ← bord droit de la zone
+
+  C = carburant, 1 bloc au-delà du bord gauche (aligné sur la colonne de T)
+```
 
 ### Boutons de contrôle (vue détail)
 

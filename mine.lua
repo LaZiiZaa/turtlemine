@@ -431,14 +431,19 @@ end
 -- DEPOT [1]
 -------------------------------------------------------------
 -- BASE (mode "home", tunnel ET excavatrice) :
---   coffre de VIDAGE a l'ARRIERE du depart, coffre de CARBURANT a GAUCHE.
---   La tortue ne casse jamais ces coffres (elle ne fait que suck/drop ;
---   en excavatrice la zone est creusee vers l'avant/droite, cf digLayerCentered).
--- Plein initial avant de partir : aspire le carburant du coffre gauche + refuel all.
-local function initFuelHome()
-  face(3)                                    -- coffre carburant (gauche)
+--   coffre de VIDAGE a l'ARRIERE du depart ; coffre de CARBURANT a GAUCHE.
+--   Tunnel : la voie part vers l'avant, le coffre carburant est colle a gauche
+--   du depart. Excavatrice : le creusement est CENTRE sur la tortue, donc le
+--   coffre carburant se place au BORD GAUCHE de la zone (la tortue s'y rend pour
+--   le plein) pour ne jamais le casser. La tortue ne fait que suck/drop dessus.
+-- Plein (refuel all) : a appeler depuis la colonne de depart (x=0, z=0).
+local function grabFuelHome(j)
+  local left = (j.mode=="excavate") and math.floor(((j.width or 1)-1)/2) or 0
+  if left>0 then gotoZ(-left) end            -- excavatrice large : va au bord gauche
+  face(3)                                    -- coffre carburant (1 bloc plus a gauche)
   for _=1,REFUEL_GRAB do if not turtle.suck() then break end end
   refuelAll()                                -- brule tout le carburant recupere
+  if left>0 then gotoZ(0) end                -- revient sur la colonne du depart
   face(0)
 end
 -- Retour a la base : vide dans le coffre arriere + refait le plein au coffre gauche.
@@ -455,13 +460,11 @@ local function serviceAtHome()
       if not turtle.drop() then statusMsg="Coffre arriere plein !" end
     end
   end
-  face(3)                                     -- coffre carburant (gauche)
-  for _=1,REFUEL_GRAB do if not turtle.suck() then break end end
-  refuelAll()
+  grabFuelHome(job)                           -- plein au coffre carburant (gauche / bord gauche)
   turtle.select(1)
   if job and fuelLow(job) then                -- pas assez meme apres le plein -> on reste
     state="Erreur"; statusMsg="Plein insuffisant : reste au depart"
-    face(0); aborted=true; return
+    aborted=true; return                      -- grabFuelHome a deja remis face avant
   end
   gotoWork(wx,wy,wz,wh)                        -- repart au chantier
 end
@@ -521,7 +524,7 @@ end
 -------------------------------------------------------------
 local function runTunnel(j)
   state = "Minage"; statusMsg = ("Tunnel %dx%dx%d"):format(j.length, j.width or 1, j.height)
-  if j.deposit=="home" and not resumed then initFuelHome() end   -- plein initial (coffre gauche)
+  if j.deposit=="home" and not resumed then grabFuelHome(j) end   -- plein initial (coffre gauche)
   for i=j.progress.i+1, j.length do
     fuelGuard(j); controlCheck(); if aborted then break end
     recording=true
@@ -537,15 +540,14 @@ end
 -------------------------------------------------------------
 -- MODE EXCAVATRICE (footprint L x l, sur 'prof' couches)
 -------------------------------------------------------------
--- creuse UNE couche L x l en serpentin. Par defaut CENTREE sur la colonne de
--- depart ; en mode "home" la zone est ancree a DROITE (left=0) pour ne JAMAIS
--- toucher le coffre de carburant place a GAUCHE de la tortue (place la tortue
--- au bord gauche de la zone a creuser).
+-- creuse UNE couche L x l en serpentin, CENTREE sur la colonne de depart.
 -- La tortue commence et finit (via le retour du runExcavate) sur la colonne du depart.
+-- En mode "home" le coffre carburant est place 1 bloc au-dela du bord gauche
+-- (z = -left-1), donc HORS de la zone : il n'est jamais creuse.
 -- Renvoie false si bloquee (bedrock dans la couche, etc.).
 local function digLayerCentered(j)
   local W = j.width or 1
-  local left = (j.deposit=="home") and 0 or math.floor((W-1)/2)
+  local left = math.floor((W-1)/2)
   for _=1,left do                         -- aller au bord gauche (z = -left)
     fuelGuard(j); controlCheck(); if aborted then return false end
     turnLeft(); digFront()
@@ -588,7 +590,7 @@ local function runExcavate(j)
   local label = j.alternate and "Excav.alt" or "Excavate"
   state = "Minage"; statusMsg = ("%s %dx%d prof=%s"):format(label, j.length, j.width or 1, depthLabel)
   gotoX(0); gotoZ(0); face(0)             -- colonne du depart au niveau courant (reprise OK)
-  if j.deposit=="home" and not resumed then initFuelHome() end   -- plein initial (coffre gauche)
+  if j.deposit=="home" and not resumed then grabFuelHome(j) end   -- plein initial (coffre gauche)
   while true do
     local d = -pos.y                       -- profondeur courante (0 = surface)
     j.progress = { layer = d+1 }
@@ -996,7 +998,7 @@ local function menu()
   end
   print("Depot quand plein :")
   print("  1) Coffres a la base : vidage ARRIERE + carburant GAUCHE")
-  print("     (excavatrice : zone creusee vers l'avant/droite)")
+  print("     (excavatrice centree : carburant au BORD GAUCHE de la zone)")
   print("  2) Aucun (surplus jete)")
   local d
   repeat write("Choix [1]: "); local r=read(); if r=="" then r="1" end; d=tonumber(r) until d==1 or d==2

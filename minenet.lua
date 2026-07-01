@@ -40,8 +40,9 @@ M.OFFLINE   = 4              -- secondes sans message => tortue "hors-ligne" (co
 -- Partages tortue <-> tablette pour rester synchronises : la tortue construit
 -- le job complet a partir de ces descripteurs (mine.lua -> buildPresetJob).
 -- depot = "home" : coffre de VIDAGE derriere la tortue + coffre de CARBURANT a
--- sa GAUCHE (jamais casse ; plein "refuel all" au depart). Filtrage minerais +
--- vein mining actives. Place la tortue au bord GAUCHE de la zone a creuser.
+-- GAUCHE (jamais casse ; plein "refuel all" au depart). Filtrage minerais +
+-- vein mining actives. Excavatrice CENTREE : place la tortue au milieu de la
+-- zone, le coffre carburant au BORD GAUCHE (1 bloc au-dela du bord).
 M.PRESETS = {
   { name = "Tunnel",      mode = "tunnel",
     length = 32, width = 3, height = 3,
